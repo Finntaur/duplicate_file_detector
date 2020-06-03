@@ -2,6 +2,8 @@ require 'progress_bar'
 require 'sqlite3'
 require 'time'
 
+require File.join(__dir__, 'cached_file')
+
 module DFD
   DEFAULT_DATABASE = File.join(ENV['HOME'], '.dfd.sqlite3').freeze
   DATABASE_TABLE = 'files'.freeze
@@ -65,6 +67,34 @@ module DFD
       )
     end
 
+    # Find all files that match the checksums and filesize of the item on
+    # the row with provided absolute path.
+    def find_copies(path)
+      query = @database.prepare("
+        SELECT #{DATABASE_COLUMNS.join(',')}
+          FROM #{DATABASE_TABLE}
+          WHERE path = ?
+          LIMIT 1
+      ")
+      file = DFD::CachedFile.new(query.execute(path).first)
+
+      query = @database.prepare("
+        SELECT path
+          FROM #{DATABASE_TABLE}
+          WHERE size = ?
+            AND sha512 = ?
+            AND md5 = ?
+      ")
+
+      copies = []
+      query.execute(file.size, file.sha512, file.md5).each do |copy|
+        copies << copy.first
+      end
+
+      copies
+    end
+    alias_method(:find_duplicates, :find_copies)
+
     # Browse through the entire cache and remove any entries that no longer
     # exist in the filesystem, or have been touched (timestamp or size changed)
     # since last update.
@@ -75,6 +105,7 @@ module DFD
           DELETE FROM #{DATABASE_TABLE} WHERE true;
         ")
         @database.commit rescue nil
+        $STDOUT&.puts('Done!')
         return
       end
 
@@ -99,7 +130,7 @@ module DFD
               LIMIT #{BATCH_SIZE}
               OFFSET #{offset};
           ").each do |row|
-            item = CachedFile.new(row)
+            item = DFD::CachedFile.new(row)
             purgeable << item.id.to_i unless valid?(item)
             progress_bar&.increment!
           end
