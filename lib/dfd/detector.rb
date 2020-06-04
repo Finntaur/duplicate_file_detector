@@ -4,13 +4,14 @@ require 'progress_bar'
 require File.join(__dir__, 'directory')
 require File.join(__dir__, 'cache')
 require File.join(__dir__, 'analyzed_file')
+require File.join(__dir__, 'handler')
 
 module DFD
   class Detector
     VERSION = '1.0'.freeze
 
     class Options
-      attr_accessor(:paths, :include_all, :recursive, :quiet, :cache, :dry_run)
+      attr_accessor(:paths, :include_all, :recursive, :quiet, :cache, :dry_run, :no_color, :auto_keep)
 
       def initialize
         @paths = []
@@ -19,6 +20,8 @@ module DFD
         @quiet = false
         @parser = nil
         @dry_run = false
+        @no_color = false
+        @auto_keep = nil
       end
 
       def set(parser:)
@@ -32,6 +35,8 @@ module DFD
         set_recursive_option
         set_quiet_option
         set_dry_run_option
+        set_no_color_option
+        set_auto_keep_option
 
         @parser.on_tail('-h', '--help', 'Show this help') do
           help
@@ -57,13 +62,13 @@ module DFD
       private
 
       def set_include_all_option
-        @parser.on('-a', '--all', 'Include all files') do
+        @parser.on('-a', '--all', 'Include hidden files in analysis') do
           @include_all = true
         end
       end
 
       def set_quiet_option
-        @parser.on('-q', '--quiet', 'Silence all output') do
+        @parser.on('-q', '--quiet', 'Silence all unnecessary output') do
           @quiet = true
         end
       end
@@ -71,6 +76,12 @@ module DFD
       def set_recursive_option
         @parser.on('-r', '--recursive', 'Recurse into subdirectories') do
           @recursive = true
+        end
+      end
+
+      def set_no_color_option
+        @parser.on('--no-color', 'Do not use colors in output') do
+          @no_color = true
         end
       end
 
@@ -87,14 +98,27 @@ module DFD
           @dry_run = true
         end
       end
+
+      def set_auto_keep_option
+        @parser.on(
+          '--auto KEEP',
+          DFD::AUTO_KEEP,
+          "Automatically delete duplicates, keeping the copy matching KEEP criteria (#{DFD::AUTO_KEEP.join(', ')})"
+        ) do |keep|
+          @auto_keep = keep
+        end
+      end
     end
 
     # -------------------------------------------------------------------------
 
     def initialize(arguments = nil)
+      @options = DFD::Detector::Options.new
       set_options(arguments ? arguments : [])
       @directory = DFD::Directory.new
       @cache = DFD::Cache.new
+    rescue OptionParser::InvalidArgument, OptionParser::MissingArgument
+      @options.paths.clear
     end
 
     def execute
@@ -118,12 +142,15 @@ module DFD
       progress_bar = ($STDOUT ? ProgressBar.new(@directory.size) : nil)
       @directory.files.each do |path|
         dups = @cache.find_duplicates(path)
-        duplicates << dups.sort if 1 < dups.size
+        duplicates << dups if 1 < dups.count
         progress_bar&.increment!
       end
-      duplicates.uniq!
+      duplicates.uniq!(&:files)
 
-      DFD::Handler.new(duplicates).start
+      DFD::Handler.new(duplicates, options: @options).start
+
+    rescue Interrupt
+      STDOUT.puts('Aborted!')
     end
 
     private
@@ -153,7 +180,6 @@ module DFD
     end
 
     def set_options(arguments)
-      @options = DFD::Detector::Options.new
       OptionParser.new do |parser|
         @options.set(parser: parser)
         parser.parse!

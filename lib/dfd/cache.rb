@@ -3,6 +3,7 @@ require 'sqlite3'
 require 'time'
 
 require File.join(__dir__, 'cached_file')
+require File.join(__dir__, 'duplicate_file_set')
 
 module DFD
   DEFAULT_DATABASE = File.join(ENV['HOME'], '.dfd.sqlite3').freeze
@@ -69,7 +70,7 @@ module DFD
 
     # Find all files that match the checksums and filesize of the item on
     # the row with provided absolute path.
-    def find_copies(path)
+    def find_duplicates(path)
       query = @database.prepare("
         SELECT #{DATABASE_COLUMNS.join(',')}
           FROM #{DATABASE_TABLE}
@@ -86,14 +87,20 @@ module DFD
             AND md5 = ?
       ")
 
-      copies = []
+      duplicates = []
       query.execute(file.size, file.sha512, file.md5).each do |copy|
-        copies << copy.first
+
+        duplicates << copy.first
       end
 
-      copies
+      DFD::DuplicateFileSet.new(
+        files: duplicates,
+        size: file.size,
+        sha512: file.sha512,
+        md5: file.md5
+      ).tidy!
     end
-    alias_method(:find_duplicates, :find_copies)
+    alias_method(:find_copies, :find_duplicates)
 
     # Browse through the entire cache and remove any entries that no longer
     # exist in the filesystem, or have been touched (timestamp or size changed)
