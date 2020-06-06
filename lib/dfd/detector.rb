@@ -5,13 +5,18 @@ require File.join(__dir__, 'directory')
 require File.join(__dir__, 'cache')
 require File.join(__dir__, 'analyzed_file')
 require File.join(__dir__, 'handler')
+require File.join(__dir__, 'file_filter')
 
 module DFD
   class Detector
     VERSION = '1.0'.freeze
 
     class Options
-      attr_accessor(:paths, :include_all, :recursive, :quiet, :cache, :dry_run, :no_color, :auto_keep)
+      attr_accessor(
+        :paths, :include_all, :recursive,
+        :quiet, :cache, :dry_run, :no_color,
+        :auto_keep, :filter
+      )
 
       def initialize
         @paths = []
@@ -22,6 +27,7 @@ module DFD
         @dry_run = false
         @no_color = false
         @auto_keep = nil
+        @filter = DFD::FileFilter.new
       end
 
       def set(parser:)
@@ -37,6 +43,7 @@ module DFD
         set_dry_run_option
         set_no_color_option
         set_auto_keep_option
+        set_ignore_filter_option
 
         @parser.on_tail('-h', '--help', 'Show this help') do
           help
@@ -108,6 +115,12 @@ module DFD
           @auto_keep = keep
         end
       end
+
+      def set_ignore_filter_option
+        @parser.on('--ignore SOURCE', 'Ignore files matching regular expressions provided in SOURCE file') do |source|
+          @filter.load(source)
+        end
+      end
     end
 
     # -------------------------------------------------------------------------
@@ -117,6 +130,7 @@ module DFD
       set_options(arguments ? arguments : [])
       @directory = DFD::Directory.new
       @cache = DFD::Cache.new
+      @options.filter.load(File.join(ENV['HOME'], '.dfd.ignore')) unless @options.filter.loaded
     rescue OptionParser::InvalidArgument, OptionParser::MissingArgument
       @options.paths.clear
     end
@@ -172,7 +186,8 @@ module DFD
         @directory.add(
           path,
           recursive: (@options.recursive ? true : 1),
-          include_all: @options.include_all
+          include_all: @options.include_all,
+          filter: @options.filter
         )
         progress_bar&.increment!
       end
