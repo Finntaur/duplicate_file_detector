@@ -13,13 +13,17 @@ module DFD
         @files << absolute_path
       elsif File.directory?(absolute_path) and recursive
         flags = ( include_all ? File::FNM_DOTMATCH : 0 )
-        Dir.glob('*', flags, base: absolute_path).each do |sub|
-          next if sub.match(/^\.+$/)
-          add(
-            File.join(absolute_path, sub),
-            recursive: (true == recursive),
-            include_all: include_all
-          )
+        begin
+          Dir.glob('*', flags, base: absolute_path).each do |sub|
+            next if sub.match(/^\.+$/)
+            add(
+              File.join(absolute_path, sub),
+              recursive: (true == recursive),
+              include_all: include_all
+            )
+          end
+        rescue Errno::EPERM
+          # Simply skip any unauthorized directories.
         end
       end
     end
