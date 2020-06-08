@@ -15,7 +15,7 @@ module DFD
       attr_accessor(
         :paths, :include_all, :recursive,
         :quiet, :cache, :dry_run, :no_color,
-        :auto_keep, :filter
+        :auto_keep, :filter, :trash
       )
 
       def initialize
@@ -27,6 +27,7 @@ module DFD
         @dry_run = false
         @no_color = false
         @auto_keep = nil
+        @trash = false
         @filter = DFD::FileFilter.new
       end
 
@@ -44,6 +45,7 @@ module DFD
         set_no_color_option
         set_auto_keep_option
         set_ignore_filter_option
+        set_trash_option
 
         @parser.on_tail('-h', '--help', 'Show this help') do
           help
@@ -89,6 +91,12 @@ module DFD
       def set_no_color_option
         @parser.on('--no-color', 'Do not use colors in output') do
           @no_color = true
+        end
+      end
+
+      def set_trash_option
+        @parser.on('--trash', 'Trash instead of unlink') do
+          @trash = true
         end
       end
 

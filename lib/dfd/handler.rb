@@ -1,6 +1,7 @@
 require 'highline'
 
 require File.join(__dir__, 'duplicate_file_set')
+require File.join(__dir__, 'trasher')
 
 module DFD
   AUTO_KEEP = %i(oldest newest first last).freeze
@@ -20,6 +21,7 @@ module DFD
       }
       @colors = nil if @options.no_color
       @highline = HighLine.new
+      @trasher = DFD::Trasher.new(mode: @options.trash ? :trash : :remove)
     end
 
     def start
@@ -52,7 +54,7 @@ module DFD
         next if keep.include?(index)
         action = ( @options.dry_run ? 'Would delete' : 'Delete' )
         STDOUT.puts("#{action} #{@colors&.[](:delete)}#{file}#{@colors&.[](:normal)}")
-        File.delete(file) unless @options.dry_run
+        @trasher.trash(file) unless @options.dry_run
       end
     end
 
